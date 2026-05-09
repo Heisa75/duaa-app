@@ -844,16 +844,13 @@ function makeAdhkarCard(item, scope){
       updateHomeProgress();
     };
     pill.onclick = tickFn;
-    // Make entire card tappable (exclude fav button and pill itself to avoid double-count)
+    // Make entire card tappable — use click (not touchstart) so scroll gestures don't trigger count
     card.style.cursor = 'pointer';
     card.addEventListener('click', function(e){
-      if(e.target.closest('.card-fav, .counter-pill')) return;
+      var el = e.target; while(el && el.nodeType !== 1) el = el.parentElement;
+      if(!el || el.closest('.card-fav, .counter-pill')) return;
       tickFn();
     });
-    card.addEventListener('touchstart', function(e){
-      if(e.target.closest('.card-fav, .counter-pill')) return;
-      tickFn();
-    }, {passive:true});
     foot.appendChild(pill);
   } else if(count===1 && (scope==='morning' || scope==='evening' || scope==='sleep' || scope==='wake' || scope==='afterPrayer')){
     var done = document.createElement('button');
@@ -878,13 +875,10 @@ function makeAdhkarCard(item, scope){
     // Make entire card tappable for mark/done too
     card.style.cursor = 'pointer';
     card.addEventListener('click', function(e){
-      if(e.target.closest('.card-fav, .counter-pill')) return;
+      var el = e.target; while(el && el.nodeType !== 1) el = el.parentElement;
+      if(!el || el.closest('.card-fav, .counter-pill')) return;
       doneFn();
     });
-    card.addEventListener('touchstart', function(e){
-      if(e.target.closest('.card-fav, .counter-pill')) return;
-      doneFn();
-    }, {passive:true});
     foot.appendChild(done);
   }
   card.appendChild(foot);
