@@ -563,27 +563,39 @@ function fmtHijri(){
 
 // ============ TASBIH FULL-SCREEN TAP ============
 var _tasbihHandler = null;
+var _tasbihEventName = null;
+var _lastTasbihTap = 0;
 function attachTasbihFullscreen(){
-  if(_tasbihHandler) removeTasbihFullscreen();
+  removeTasbihFullscreen();
+  var pg = document.getElementById('page-tasbih');
+  if(!pg) return;
+  // Use touchstart on touch devices (no 300ms delay, no double-fire)
+  // Use click on desktop mouse
+  _tasbihEventName = ('ontouchstart' in window || navigator.maxTouchPoints > 0) ? 'touchstart' : 'click';
   _tasbihHandler = function(e){
-    // Ignore touches on buttons, inputs, or within meta controls
-    if(e.target.closest('button,input,select')) return;
-    // Only when tasbih page is visible
-    var pg = document.getElementById('page-tasbih');
-    if(!pg || !pg.classList.contains('active')) return;
-    // Tap first counter
+    // Debounce: prevent double-fire from touchstart+click on hybrid devices
+    var now = Date.now();
+    if(now - _lastTasbihTap < 400) return;
+    // Walk up from e.target to find an Element node (guard against text nodes)
+    var el = e.target;
+    while(el && el.nodeType !== 1) el = el.parentElement;
+    if(!el) return;
+    // Skip taps on interactive elements
+    if(typeof el.closest === 'function' && el.closest('button,input,select,a,label')) return;
+    // Count on first counter
     if(STATE.tasbih && STATE.tasbih.counters && STATE.tasbih.counters.length > 0){
+      _lastTasbihTap = now;
       tapTasbih(0);
     }
   };
-  document.addEventListener('touchstart', _tasbihHandler, {passive:true});
-  document.addEventListener('click', _tasbihHandler);
+  pg.addEventListener(_tasbihEventName, _tasbihHandler, {passive: true});
 }
 function removeTasbihFullscreen(){
-  if(_tasbihHandler){
-    document.removeEventListener('touchstart', _tasbihHandler);
-    document.removeEventListener('click', _tasbihHandler);
+  if(_tasbihHandler && _tasbihEventName){
+    var pg = document.getElementById('page-tasbih');
+    if(pg) pg.removeEventListener(_tasbihEventName, _tasbihHandler);
     _tasbihHandler = null;
+    _tasbihEventName = null;
   }
 }
 // Remove full-screen handler when leaving tasbih
@@ -810,7 +822,8 @@ function makeAdhkarCard(item, scope){
     var cur = bucket[item.id] || 0;
     if(cur >= count) pill.classList.add('done');
     pill.innerHTML = '<span class="counter-num">'+cur+'</span>/<span>'+count+'</span>';
-    pill.onclick = function(){
+    // Extract tick logic so card and pill share the same function
+    var tickFn = function(){
       var c = (bucket[item.id]||0);
       if(c >= count){
         bucket[item.id] = 0;
@@ -830,6 +843,17 @@ function makeAdhkarCard(item, scope){
       saveState();
       updateHomeProgress();
     };
+    pill.onclick = tickFn;
+    // Make entire card tappable (exclude fav button and pill itself to avoid double-count)
+    card.style.cursor = 'pointer';
+    card.addEventListener('click', function(e){
+      if(e.target.closest('.card-fav, .counter-pill')) return;
+      tickFn();
+    });
+    card.addEventListener('touchstart', function(e){
+      if(e.target.closest('.card-fav, .counter-pill')) return;
+      tickFn();
+    }, {passive:true});
     foot.appendChild(pill);
   } else if(count===1 && (scope==='morning' || scope==='evening' || scope==='sleep' || scope==='wake' || scope==='afterPrayer')){
     var done = document.createElement('button');
@@ -838,7 +862,7 @@ function makeAdhkarCard(item, scope){
     var isDone = (bucket2[item.id]||0) >= 1;
     if(isDone) done.classList.add('done');
     done.textContent = isDone ? (STATE.lang==='ar'?'✓ تم':'✓ Done') : (STATE.lang==='ar'?'علّم':'Mark');
-    done.onclick = function(){
+    var doneFn = function(){
       var c = bucket2[item.id]||0;
       if(c>=1){ bucket2[item.id]=0; done.classList.remove('done'); done.textContent = STATE.lang==='ar'?'علّم':'Mark'; }
       else {
@@ -850,6 +874,17 @@ function makeAdhkarCard(item, scope){
       saveState();
       updateHomeProgress();
     };
+    done.onclick = doneFn;
+    // Make entire card tappable for mark/done too
+    card.style.cursor = 'pointer';
+    card.addEventListener('click', function(e){
+      if(e.target.closest('.card-fav, .counter-pill')) return;
+      doneFn();
+    });
+    card.addEventListener('touchstart', function(e){
+      if(e.target.closest('.card-fav, .counter-pill')) return;
+      doneFn();
+    }, {passive:true});
     foot.appendChild(done);
   }
   card.appendChild(foot);
