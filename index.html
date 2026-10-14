@@ -555,7 +555,7 @@ function fmtGregorian(){
 function fmtHijri(){
   try{
     var d = new Date();
-    var locale = STATE.lang==='ar'?'ar-SA-u-ca-islamic':'en-u-ca-islamic';
+    var locale = STATE.lang==='ar'?'ar-SA-u-ca-islamic-umalqura':'en-u-ca-islamic-umalqura';
     var s = new Intl.DateTimeFormat(locale,{day:'numeric',month:'long',year:'numeric'}).format(d);
     return s.replace(' AH','').replace('هـ','').trim();
   }catch(e){ return '—'; }
