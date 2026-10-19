@@ -468,17 +468,55 @@ function defaultState(){
     activeDuaCat: ''
   };
 }
+/* An imported backup is a file the user was handed, so nothing in it is
+   trusted. Counts are written straight into innerHTML, so coerce every
+   stored value to the shape the app expects before it is used. */
+function sanitizeState(s){
+  var d = defaultState();
+  if(!s || typeof s !== 'object') return d;
+  function int(v, lo, hi, dflt){ var x = Math.floor(Number(v)); return isFinite(x) ? Math.min(hi, Math.max(lo, x)) : dflt; }
+  function ids(a){ return Array.isArray(a) ? a.filter(function(x){ return typeof x === 'string'; }) : []; }
+  function oneOf(v, list, dflt){ return list.indexOf(v) > -1 ? v : dflt; }
+  for(var k in d){ if(!(k in s)) s[k] = d[k]; }
+  s.lang = oneOf(s.lang, ['ar','en'], d.lang);
+  s.theme = oneOf(s.theme, ['light','dark'], d.theme);
+  s.fs = oneOf(s.fs, ['s','m','l'], 'm');
+  s.haptic = oneOf(s.haptic, ['on','off'], 'on');
+  s.activeAdhkarTab = oneOf(s.activeAdhkarTab, ['morning','evening','sleep','wake','afterPrayer','situational'], 'morning');
+  if(typeof s.activeDuaCat !== 'string') s.activeDuaCat = '';
+  s.favorites = ids(s.favorites);
+  var pr = (s.progress && typeof s.progress === 'object') ? s.progress : d.progress;
+  s.progress = { lastDate: typeof pr.lastDate === 'string' ? pr.lastDate : '',
+                 morningDone: ids(pr.morningDone), eveningDone: ids(pr.eveningDone) };
+  var st = (s.streak && typeof s.streak === 'object') ? s.streak : d.streak;
+  s.streak = { morning: int(st.morning, 0, 1e6, 0), evening: int(st.evening, 0, 1e6, 0),
+               lastMorningDate: typeof st.lastMorningDate === 'string' ? st.lastMorningDate : '',
+               lastEveningDate: typeof st.lastEveningDate === 'string' ? st.lastEveningDate : '' };
+  var src = (s.counters && typeof s.counters === 'object') ? s.counters : {};
+  s.counters = {};
+  Object.keys(d.counters).forEach(function(scope){
+    var from = (src[scope] && typeof src[scope] === 'object') ? src[scope] : {}, out = {};
+    Object.keys(from).forEach(function(id){ out[id] = int(from[id], 0, 1e6, 0); });
+    s.counters[scope] = out;
+  });
+  if(!s.tasbih || !Array.isArray(s.tasbih.counters) || !s.tasbih.counters.length) s.tasbih = d.tasbih;
+  else s.tasbih = {
+    counters: s.tasbih.counters.slice(0, 50).map(function(c, i){
+      c = (c && typeof c === 'object') ? c : {};
+      var def = d.tasbih.counters[i] || d.tasbih.counters[0];
+      return { name: typeof c.name === 'string' ? c.name.slice(0, 120) : def.name,
+               tr: typeof c.tr === 'string' ? c.tr.slice(0, 120) : def.tr,
+               count: int(c.count, 0, 1e6, 0), target: int(c.target, 1, 1e6, 33), total: int(c.total, 0, 1e9, 0) };
+    }),
+    lifetime: int(s.tasbih.lifetime, 0, 1e12, 0)
+  };
+  return s;
+}
 var STATE = (function(){
   try{
     var raw = localStorage.getItem('duaa_v1');
     if(!raw) return defaultState();
-    var s = JSON.parse(raw);
-    var d = defaultState();
-    // shallow merge with defaults so new fields always exist
-    for(var k in d){ if(!(k in s)) s[k] = d[k]; }
-    if(!s.tasbih || !s.tasbih.counters) s.tasbih = d.tasbih;
-    if(!s.counters) s.counters = d.counters;
-    return s;
+    return sanitizeState(JSON.parse(raw));
   }catch(e){ return defaultState(); }
 })();
 function saveState(){
@@ -1243,7 +1281,7 @@ function importData(){
     rd.onload = function(){
       try{
         var s = JSON.parse(rd.result);
-        STATE = Object.assign(defaultState(), s);
+        STATE = sanitizeState(Object.assign(defaultState(), s));
         saveState();
         applyLang(); applyTheme();
         document.documentElement.setAttribute('data-fs', STATE.fs);
