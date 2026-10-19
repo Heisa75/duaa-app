@@ -483,7 +483,9 @@ function sanitizeState(s){
   s.fs = oneOf(s.fs, ['s','m','l'], 'm');
   s.haptic = oneOf(s.haptic, ['on','off'], 'on');
   s.activeAdhkarTab = oneOf(s.activeAdhkarTab, ['morning','evening','sleep','wake','afterPrayer','situational'], 'morning');
-  if(typeof s.activeDuaCat !== 'string') s.activeDuaCat = '';
+  var duaCats = {};
+  (Array.isArray(DATA.duas) ? DATA.duas : []).forEach(function(d){ if(d && d.cat) duaCats[d.cat] = 1; });
+  if(typeof s.activeDuaCat !== 'string' || (s.activeDuaCat && s.activeDuaCat !== '__fav__' && !duaCats[s.activeDuaCat])) s.activeDuaCat = '';
   s.favorites = ids(s.favorites);
   var pr = (s.progress && typeof s.progress === 'object') ? s.progress : d.progress;
   s.progress = { lastDate: typeof pr.lastDate === 'string' ? pr.lastDate : '',
@@ -573,8 +575,12 @@ function applyRollover(){
       STATE.streak.evening = 0;
     }
     STATE.progress = { lastDate: t, morningDone: [], eveningDone: [] };
-    // start every day with the per-dhikr counters back at zero
-    STATE.counters = { morning:{}, evening:{}, sleep:{}, wake:{}, afterPrayer:{} };
+    // start every day with the per-dhikr counters back at zero. The buckets are
+    // emptied in place: cards already on screen hold a reference to them.
+    Object.keys(STATE.counters).forEach(function(scope){
+      var bucket = STATE.counters[scope];
+      if(bucket && typeof bucket === 'object') Object.keys(bucket).forEach(function(id){ delete bucket[id]; });
+    });
     // also reset session counters (not lifetime totals)
     if(STATE.tasbih && STATE.tasbih.counters){
       STATE.tasbih.counters.forEach(function(c){ c.count = 0; });
@@ -595,10 +601,13 @@ function rolloverOnResume(){
   if(name==='adhkar') renderAdhkarList();
   else if(name==='tasbih') renderTasbih();
   else if(name==='home') renderHome();
+  else if(name==='search') runSearch();
   updateHomeProgress();
 }
 document.addEventListener('visibilitychange', function(){ if(!document.hidden) rolloverOnResume(); });
 window.addEventListener('focus', rolloverOnResume);
+// a window left open across midnight never hides or regains focus
+setInterval(rolloverOnResume, 60000);
 
 // ============ DATES ============
 function fmtGregorian(){
@@ -809,6 +818,10 @@ function renderSituational(container){
     });
   });
 }
+function bucketOf(scope){
+  if(!STATE.counters[scope] || typeof STATE.counters[scope] !== 'object') STATE.counters[scope] = {};
+  return STATE.counters[scope];
+}
 function makeAdhkarCard(item, scope){
   var card = document.createElement('div');
   card.className = 'card';
@@ -876,12 +889,14 @@ function makeAdhkarCard(item, scope){
   if(count > 1 && (scope==='morning' || scope==='evening' || scope==='sleep' || scope==='wake' || scope==='afterPrayer')){
     var pill = document.createElement('button');
     pill.className = 'counter-pill';
-    var bucket = STATE.counters[scope] || (STATE.counters[scope] = {});
+    var bucket = bucketOf(scope);
     var cur = bucket[item.id] || 0;
     if(cur >= count) pill.classList.add('done');
     pill.innerHTML = '<span class="counter-num">'+cur+'</span>/<span>'+count+'</span>';
     // Extract tick logic so card and pill share the same function
     var tickFn = function(){
+      var rolled = applyRollover();
+      bucket = bucketOf(scope);
       var c = (bucket[item.id]||0);
       if(c >= count){
         bucket[item.id] = 0;
@@ -900,6 +915,7 @@ function makeAdhkarCard(item, scope){
       pill.innerHTML = '<span class="counter-num">'+(bucket[item.id]||0)+'</span>/<span>'+count+'</span>';
       saveState();
       updateHomeProgress();
+      if(rolled) renderAdhkarList();
     };
     pill.onclick = tickFn;
     // Make entire card tappable — use click (not touchstart) so scroll gestures don't trigger count
@@ -913,11 +929,13 @@ function makeAdhkarCard(item, scope){
   } else if(count===1 && (scope==='morning' || scope==='evening' || scope==='sleep' || scope==='wake' || scope==='afterPrayer')){
     var done = document.createElement('button');
     done.className = 'counter-pill';
-    var bucket2 = STATE.counters[scope] || (STATE.counters[scope] = {});
+    var bucket2 = bucketOf(scope);
     var isDone = (bucket2[item.id]||0) >= 1;
     if(isDone) done.classList.add('done');
     done.textContent = isDone ? (STATE.lang==='ar'?'✓ تم':'✓ Done') : (STATE.lang==='ar'?'علّم':'Mark');
     var doneFn = function(){
+      var rolled = applyRollover();
+      bucket2 = bucketOf(scope);
       var c = bucket2[item.id]||0;
       if(c>=1){ bucket2[item.id]=0; done.classList.remove('done'); done.textContent = STATE.lang==='ar'?'علّم':'Mark'; }
       else {
@@ -928,6 +946,7 @@ function makeAdhkarCard(item, scope){
       }
       saveState();
       updateHomeProgress();
+      if(rolled) renderAdhkarList();
     };
     done.onclick = doneFn;
     // Make entire card tappable for mark/done too
@@ -1282,6 +1301,7 @@ function importData(){
       try{
         var s = JSON.parse(rd.result);
         STATE = sanitizeState(Object.assign(defaultState(), s));
+        applyRollover(); /* a backup from an earlier day is not today's progress */
         saveState();
         applyLang(); applyTheme();
         document.documentElement.setAttribute('data-fs', STATE.fs);
