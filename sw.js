@@ -1,6 +1,6 @@
 // Duaa service worker
 // Bump CACHE_VERSION whenever index.html or other assets change.
-const CACHE_VERSION = 'duaa-v2-2026-10-19';
+const CACHE_VERSION = 'duaa-v3-2026-10-20';
 const CORE = ['./', './index.html', './manifest.webmanifest', './icon-180.png', './icon-192.png', './icon-512.png'];
 
 self.addEventListener('install', event => {
