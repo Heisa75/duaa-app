@@ -120,6 +120,33 @@ body::before{content:'';position:fixed;inset:0;opacity:0.025;background-image:re
 .sit-cat-hdr::before{content:'';width:18px;height:1px;background:var(--gold)}
 
 .tasbih-wrap{padding:6px 16px 20px;display:flex;flex-direction:column;gap:14px}
+.msb-chips{display:flex;gap:8px;overflow-x:auto;padding:2px 2px 4px;scrollbar-width:none}
+.msb-chips::-webkit-scrollbar{display:none}
+.msb-chip{flex:0 0 auto;min-height:40px;padding:6px 14px;border-radius:99px;border:1px solid var(--cream-dark);background:var(--white);color:var(--text);font-family:'Amiri',serif;font-size:1.05rem;cursor:pointer;display:inline-flex;align-items:center;gap:6px}
+[data-theme="dark"] .msb-chip{background:var(--cream-soft)}
+.msb-chip.on{background:var(--green-deep);border-color:var(--green-deep);color:var(--cream)}
+.msb-chip .msb-chip-n{font-family:inherit;font-size:.75rem;opacity:.75;font-variant-numeric:tabular-nums}
+.msb-chip.done .msb-chip-n::after{content:' ✓'}
+.msb-name{font-family:'Amiri',serif;font-size:2.3rem;line-height:1.5;text-align:center;color:var(--green-deep);direction:rtl;margin-top:4px}
+.msb-tr{text-align:center;font-size:.85rem;color:var(--text-mute);font-style:italic;margin-top:-6px}
+.msb-ring{position:relative;width:100%;max-width:360px;margin:0 auto;aspect-ratio:1/1;user-select:none;-webkit-user-select:none;touch-action:manipulation;cursor:pointer}
+.msb-ring svg{width:100%;height:100%;display:block;overflow:visible}
+.msb-thread{fill:none;stroke:var(--cream-dark);stroke-width:2}
+.msb-bead{fill:var(--cream-dark);stroke:var(--gold);stroke-width:1;stroke-opacity:.35;transition:fill .18s ease,r .18s ease}
+.msb-bead.on{fill:var(--gold);stroke-opacity:0}
+.msb-bead.cur{fill:var(--green-deep);stroke:var(--gold-light);stroke-width:3;stroke-opacity:1}
+.msb-tassel{fill:var(--gold-dark)}
+.msb-center{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;pointer-events:none}
+.msb-count{font-size:4.6rem;font-weight:600;color:var(--green-deep);line-height:1;font-variant-numeric:tabular-nums;font-family:'Inter',sans-serif}
+.msb-of{font-size:.95rem;color:var(--text-mute);margin-top:6px}
+.msb-ring.hit .msb-count{animation:msbHit .55s ease}
+@keyframes msbHit{0%{transform:scale(1)}40%{transform:scale(1.15);color:var(--gold-dark)}100%{transform:scale(1)}}
+.msb-hint{text-align:center;font-size:.8rem;color:var(--text-mute)}
+.msb-actions{display:flex;gap:8px}
+.msb-actions button{flex:1;min-height:46px;border-radius:12px;border:1px solid var(--cream-dark);background:var(--white);color:var(--text-soft);font-family:inherit;font-size:.9rem;cursor:pointer}
+[data-theme="dark"] .msb-actions button{background:var(--cream-soft)}
+.msb-foot{text-align:center;font-size:.82rem;color:var(--text-mute);padding:6px 0}
+@media (prefers-reduced-motion: reduce){.msb-bead{transition:none}.msb-ring.hit .msb-count{animation:none}}
 .tasbih-counter{background:var(--white);border-radius:var(--radius);padding:18px;box-shadow:var(--shadow);border:1px solid var(--cream-dark)}
 [data-theme="dark"] .tasbih-counter{background:var(--cream-soft)}
 .tasbih-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;gap:8px}
@@ -300,7 +327,7 @@ body::before{content:'';position:fixed;inset:0;opacity:0.025;background-image:re
   <section class="page" id="page-tasbih">
     <div class="page-hdr">
       <div class="page-title" data-en="Tasbih" data-ar="التسبيح">Tasbih</div>
-      <div class="page-sub" data-en="Tap anywhere to count · Multiple counters supported" data-ar="انقر في أي مكان للعد · عدادات متعددة">Tap anywhere to count</div>
+      <div class="page-sub" data-en="Tap anywhere to count · moves to the next dhikr when done" data-ar="اضغط في أي مكان للعد · ينتقل للذكر التالي عند الإتمام">Tap anywhere to count</div>
     </div>
     <div class="tasbih-wrap" id="tasbih-wrap"></div>
   </section>
@@ -510,7 +537,8 @@ function sanitizeState(s){
                tr: typeof c.tr === 'string' ? c.tr.slice(0, 120) : def.tr,
                count: int(c.count, 0, 1e6, 0), target: int(c.target, 1, 1e6, 33), total: int(c.total, 0, 1e9, 0) };
     }),
-    lifetime: int(s.tasbih.lifetime, 0, 1e12, 0)
+    lifetime: int(s.tasbih.lifetime, 0, 1e12, 0),
+    active: int(s.tasbih.active, 0, 49, 0)
   };
   return s;
 }
@@ -584,6 +612,7 @@ function applyRollover(){
     // also reset session counters (not lifetime totals)
     if(STATE.tasbih && STATE.tasbih.counters){
       STATE.tasbih.counters.forEach(function(c){ c.count = 0; });
+      STATE.tasbih.active = 0;
     }
     saveState();
     return true;
@@ -650,7 +679,7 @@ function attachTasbihFullscreen(){
     // Count on first counter
     if(STATE.tasbih && STATE.tasbih.counters && STATE.tasbih.counters.length > 0){
       _lastTasbihTap = now;
-      tapTasbih(0);
+      tapTasbih(tasbihActive());
     }
   };
   pg.addEventListener(_tasbihEventName, _tasbihHandler, {passive: true});
@@ -1032,74 +1061,138 @@ function renderDuaList(){
 }
 
 // ============ TASBIH ============
+var MSB_BEADS_MAX = 33;
+function tasbihActive(){
+  var n = STATE.tasbih.counters.length;
+  var i = parseInt(STATE.tasbih.active, 10);
+  if(isNaN(i) || i < 0 || i >= n) i = 0;
+  return i;
+}
+function msbGeom(target){
+  // beads shown per round: the whole target when it is small, otherwise 33 a round
+  /* up to 40 shows the whole target; larger targets go in even rounds (100 = 4 × 25, 99 = 3 × 33) */
+  var per = target <= 40 ? target : (target % 33 === 0 ? 33 : target % 25 === 0 ? 25 : MSB_BEADS_MAX);
+  return { per: Math.max(1, per) };
+}
 function renderTasbih(){
   var wrap = document.getElementById('tasbih-wrap');
+  var ar = STATE.lang === 'ar';
   wrap.innerHTML = '';
-  STATE.tasbih.counters.forEach(function(c, i){
-    var box = document.createElement('div');
-    box.className = 'tasbih-counter';
-    var head = document.createElement('div');
-    head.className = 'tasbih-head';
-    head.innerHTML = '<div><div class="tasbih-name">'+escHtml(c.name)+'</div>' +
-      '<div class="tasbih-target" style="font-style:italic">'+escHtml(c.tr||'')+'</div></div>' +
-      '<div class="tasbih-target" style="text-align:right">'+ (STATE.lang==='ar'?'الهدف ':'Target ') + c.target +'</div>';
-    box.appendChild(head);
-    var btn = document.createElement('button');
-    btn.className = 'tasbih-tap';
-    btn.id = 'tap-'+i;
-    btn.textContent = c.count;
-    btn.onclick = function(){ tapTasbih(i); };
-    box.appendChild(btn);
-    var meta = document.createElement('div');
-    meta.className = 'tasbih-meta';
-    meta.innerHTML = '<span>'+ (STATE.lang==='ar'?'المجموع: ':'Total: ') + c.total +'</span>';
-    var btns = document.createElement('div');
-    btns.style.display='flex'; btns.style.gap='6px';
-    var resetB = document.createElement('button');
-    resetB.textContent = STATE.lang==='ar'?'تصفير':'Reset';
-    resetB.onclick = function(){ STATE.tasbih.counters[i].count=0; saveState(); renderTasbih(); };
-    var targetB = document.createElement('button');
-    targetB.textContent = STATE.lang==='ar'?'تغيير الهدف':'Change target';
-    targetB.onclick = function(){
-      var v = prompt(STATE.lang==='ar'?'الهدف الجديد:':'New target:', String(c.target));
-      var n = parseInt(v,10);
-      if(n && n>0){ STATE.tasbih.counters[i].target = n; saveState(); renderTasbih(); }
-    };
-    btns.appendChild(resetB);
-    btns.appendChild(targetB);
-    meta.appendChild(btns);
-    box.appendChild(meta);
-    wrap.appendChild(box);
+  var ai = tasbihActive();
+  var c = STATE.tasbih.counters[ai];
+  // chips
+  var chips = document.createElement('div');
+  chips.className = 'msb-chips';
+  STATE.tasbih.counters.forEach(function(x, i){
+    var b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'msb-chip' + (i === ai ? ' on' : '') + ((x.count||0) >= x.target ? ' done' : '');
+    b.innerHTML = '<span>'+escHtml(x.name)+'</span><span class="msb-chip-n">'+(x.count||0)+'/'+x.target+'</span>';
+    b.onclick = function(){ STATE.tasbih.active = i; saveState(); renderTasbih(); };
+    chips.appendChild(b);
   });
-  var foot = document.createElement('div');
-  foot.style.cssText = 'text-align:center;font-size:.85rem;color:var(--text-mute);padding:14px 0';
-  foot.textContent = (STATE.lang==='ar'?'مجموع التسبيحات: ':'Lifetime tasbih total: ') + (STATE.tasbih.lifetime||0);
+  wrap.appendChild(chips);
+  var nm = document.createElement('div'); nm.className = 'msb-name'; nm.textContent = c.name; wrap.appendChild(nm);
+  if(c.tr){ var tr = document.createElement('div'); tr.className = 'msb-tr'; tr.textContent = c.tr; wrap.appendChild(tr); }
+  // masbaha
+  var g = msbGeom(c.target), per = g.per;
+  var ring = document.createElement('div');
+  ring.className = 'msb-ring'; ring.id = 'msb-ring';
+  ring.setAttribute('role', 'button');
+  ring.setAttribute('tabindex', '0');
+  ring.setAttribute('aria-label', ar ? 'عُدّ' : 'Count');
+  var W = 340, cx = 170, cy = 165, R = 140, svg = '';
+  svg += '<svg viewBox="0 0 '+W+' '+W+'" aria-hidden="true">';
+  // open circle with a gap at the bottom for the tassel
+  var a0 = Math.PI/2 + 0.32, a1 = Math.PI/2 + 2*Math.PI - 0.32;
+  var p0 = [cx + R*Math.cos(a0), cy + R*Math.sin(a0)], p1 = [cx + R*Math.cos(a1), cy + R*Math.sin(a1)];
+  svg += '<path class="msb-thread" d="M'+p0[0].toFixed(1)+' '+p0[1].toFixed(1)+' A'+R+' '+R+' 0 1 1 '+p1[0].toFixed(1)+' '+p1[1].toFixed(1)+'"></path>';
+  svg += '<path class="msb-thread" d="M'+p0[0].toFixed(1)+' '+p0[1].toFixed(1)+' L'+cx+' '+(cy+R+26)+' L'+p1[0].toFixed(1)+' '+p1[1].toFixed(1)+'"></path>';
+  svg += '<circle class="msb-tassel" cx="'+cx+'" cy="'+(cy+R+26)+'" r="9"></circle>';
+  svg += '<rect class="msb-tassel" x="'+(cx-3)+'" y="'+(cy+R+34)+'" width="6" height="22" rx="3"></rect>';
+  var br = per > 24 ? 9.5 : per > 12 ? 12 : 15;
+  for(var k=0; k<per; k++){
+    // beads run from the tassel round the circle (clockwise in RTL reading order)
+    var t = per === 1 ? 0.5 : k/(per-1);
+    var ang = a0 + t*(a1 - a0);
+    svg += '<circle class="msb-bead" id="msb-b'+k+'" cx="'+(cx + R*Math.cos(ang)).toFixed(1)+'" cy="'+(cy + R*Math.sin(ang)).toFixed(1)+'" r="'+br+'"></circle>';
+  }
+  svg += '</svg>';
+  ring.innerHTML = svg + '<div class="msb-center"><div class="msb-count" id="msb-count">'+(c.count||0)+'</div><div class="msb-of" id="msb-of"></div></div>';
+  ring.addEventListener('keydown', function(e){ if(e.key === 'Enter' || e.key === ' '){ e.preventDefault(); tapTasbih(tasbihActive()); } });
+  wrap.appendChild(ring);
+  var hint = document.createElement('div'); hint.className = 'msb-hint';
+  hint.textContent = ar ? 'كل ضغطة تملأ حبّة · اضغط في أي مكان من الصفحة' : 'Each tap fills a bead · tap anywhere on the page';
+  wrap.appendChild(hint);
+  // actions
+  var acts = document.createElement('div'); acts.className = 'msb-actions';
+  function mk(label, fn){ var b = document.createElement('button'); b.type = 'button'; b.textContent = label; b.onclick = fn; acts.appendChild(b); }
+  mk(ar ? 'تراجع −١' : 'Undo −1', function(){ var x = STATE.tasbih.counters[tasbihActive()]; if((x.count||0) > 0){ x.count--; x.total = Math.max(0,(x.total||0)-1); STATE.tasbih.lifetime = Math.max(0,(STATE.tasbih.lifetime||0)-1); saveState(); msbPaint(); } });
+  mk(ar ? 'تصفير' : 'Reset', function(){ STATE.tasbih.counters[tasbihActive()].count = 0; saveState(); renderTasbih(); });
+  mk((ar ? 'الهدف ' : 'Target ') + c.target, function(){
+    var x = STATE.tasbih.counters[tasbihActive()];
+    var v = prompt(ar ? 'الهدف الجديد:' : 'New target:', String(x.target));
+    var n = parseInt(v, 10);
+    if(n && n > 0 && n <= 100000){ x.target = n; saveState(); renderTasbih(); }
+  });
+  wrap.appendChild(acts);
+  var foot = document.createElement('div'); foot.className = 'msb-foot'; foot.id = 'msb-foot';
   wrap.appendChild(foot);
+  msbPaint();
 }
+function msbPaint(){
+  var ar = STATE.lang === 'ar';
+  var ai = tasbihActive(), c = STATE.tasbih.counters[ai];
+  var per = msbGeom(c.target).per, cnt = c.count || 0;
+  var full = cnt >= c.target;
+  var inRound = full ? per : cnt % per;
+  if(!full && cnt > 0 && inRound === 0) inRound = per; // a round just completed: show it full
+  for(var k=0; k<per; k++){
+    var el = document.getElementById('msb-b'+k);
+    if(!el) continue;
+    el.setAttribute('class', 'msb-bead' + (k < inRound ? ' on' : '') + (!full && k === inRound % per && !(inRound === per) ? ' cur' : ''));
+  }
+  var ce = document.getElementById('msb-count'); if(ce) ce.textContent = cnt;
+  var of = document.getElementById('msb-of');
+  if(of){
+    var rounds = Math.ceil(c.target / per);
+    var round = Math.min(rounds, Math.floor(Math.max(0, cnt - 1) / per) + 1);
+    of.textContent = (ar ? 'من ' : 'of ') + c.target + (rounds > 1 ? (ar ? ' · الدورة ' : ' · round ') + round + (ar ? ' من ' : '/') + rounds : '');
+  }
+  var foot = document.getElementById('msb-foot');
+  if(foot) foot.textContent = (ar ? 'مجموع هذا الذكر: ' : 'This dhikr total: ') + (c.total||0) + ' · ' + (ar ? 'كل التسبيحات: ' : 'All tasbih: ') + (STATE.tasbih.lifetime||0);
+  var chips = document.querySelectorAll('.msb-chip');
+  if(chips[ai]){ chips[ai].querySelector('.msb-chip-n').textContent = cnt + '/' + c.target; chips[ai].classList.toggle('done', full); }
+}
+var _msbAdvance = null;
 function tapTasbih(i){
   var c = STATE.tasbih.counters[i];
+  if(!c) return;
   c.count = (c.count||0)+1;
   c.total = (c.total||0)+1;
   STATE.tasbih.lifetime = (STATE.tasbih.lifetime||0)+1;
-  var btn = document.getElementById('tap-'+i);
-  if(btn) btn.textContent = c.count;
+  var ring = document.getElementById('msb-ring');
   if(c.count === c.target){
     vibrate([40,60,80]);
-    if(btn){
-      btn.classList.add('target-hit');
-      setTimeout(function(){ btn.classList.remove('target-hit'); }, 600);
+    if(ring){ ring.classList.remove('hit'); void ring.offsetWidth; ring.classList.add('hit'); }
+    toast((STATE.lang==='ar'?'بلغت الهدف · ':'Target reached · ')+(STATE.lang==='ar'?c.name:c.tr));
+    // move on to the next unfinished dhikr after a short pause
+    var next = -1;
+    for(var k=1; k<STATE.tasbih.counters.length; k++){
+      var j = (i + k) % STATE.tasbih.counters.length, x = STATE.tasbih.counters[j];
+      if((x.count||0) < x.target){ next = j; break; }
     }
-    toast((STATE.lang==='ar'?'بلغت الهدف · ':'Target reached · ')+c.tr);
+    if(next >= 0){
+      clearTimeout(_msbAdvance);
+      _msbAdvance = setTimeout(function(){ if(tasbihActive() === i){ STATE.tasbih.active = next; saveState(); renderTasbih(); } }, 900);
+    }
+  } else if(c.count % msbGeom(c.target).per === 0){
+    vibrate([25,40,25]);
   } else {
-    vibrate(15);
+    vibrate(12);
   }
   saveState();
-  // refresh footer total
-  var foot = document.querySelectorAll('#tasbih-wrap > div')[STATE.tasbih.counters.length];
-  if(foot) foot.textContent = (STATE.lang==='ar'?'مجموع التسبيحات: ':'Lifetime tasbih total: ') + STATE.tasbih.lifetime;
-  // refresh meta totals
-  var metas = document.querySelectorAll('.tasbih-meta > span');
-  if(metas[i]) metas[i].textContent = (STATE.lang==='ar'?'المجموع: ':'Total: ') + c.total;
+  msbPaint();
 }
 
 // ============ ASMA ============
@@ -1168,6 +1261,7 @@ function startNameTasbih(){
   var name = 'يَا '+_selectedName.ar.replace(/^ال/,'');
   var tr = 'Ya '+_selectedName.tr.replace(/^Al-|^An-|^Ar-|^As-|^Ash-|^At-|^Adh-|^Ad-|^Az-/i,'');
   STATE.tasbih.counters.unshift({name:name, tr:tr, count:0, target:33, total:0});
+  STATE.tasbih.active = 0;
   // cap at 10
   if(STATE.tasbih.counters.length > 10) STATE.tasbih.counters = STATE.tasbih.counters.slice(0,10);
   saveState();
