@@ -107,6 +107,24 @@ body::before{content:'';position:fixed;inset:0;opacity:0.025;background-image:re
 .card-ar{font-family:'Amiri','Scheherazade New',serif;font-size:var(--ar-size);line-height:2.1;text-align:right;direction:rtl;color:var(--text);padding:8px 4px;white-space:pre-wrap}
 .card-translit{font-size:.84rem;color:var(--text-mute);margin-top:8px;font-style:italic;line-height:1.55}
 .card-en{font-family:'Cormorant Garamond',serif;font-size:.98rem;line-height:1.6;color:var(--text-soft);margin-top:10px;padding-top:10px;border-top:1px dashed var(--cream-dark)}
+.bd-wrap{margin-top:14px;display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap}
+.bd-row{display:flex;align-items:center;gap:0;flex-wrap:wrap;row-gap:8px;position:relative;padding:4px 0}
+.bd{width:20px;height:20px;border-radius:50%;background:var(--cream-dark);border:1.5px solid var(--gold);border-color:rgba(201,168,76,.45);box-sizing:border-box;transition:background .18s ease,transform .18s ease}
+.bd + .bd{margin-inline-start:6px}
+.bd.on{background:var(--gold);border-color:var(--gold)}
+.bd.cur{background:var(--green-deep);border-color:var(--gold-light);transform:scale(1.18)}
+.bd-one{width:28px;height:28px}
+.bd-mini{position:relative;width:96px;height:96px;flex:0 0 auto}
+.bd-mini svg{width:100%;height:100%;display:block;overflow:visible}
+.bd-mini .msb-bead{stroke-width:1}
+.bd-mini-n{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:1.35rem;font-weight:600;color:var(--green-deep);font-variant-numeric:tabular-nums;font-family:'Inter',sans-serif}
+.bd-label{font-size:.85rem;color:var(--text-mute);font-variant-numeric:tabular-nums}
+.bd-label b{color:var(--green-deep);font-weight:600}
+.bd-reset{background:none;border:1px solid var(--cream-dark);color:var(--text-mute);border-radius:10px;min-width:40px;min-height:36px;cursor:pointer;font-family:inherit;font-size:.8rem;padding:0 10px}
+.card.card-done{border-color:var(--gold)}
+.card.card-done .card-ar{opacity:.72}
+.card.bd-pulse{animation:pulseGold .5s ease}
+@media (prefers-reduced-motion: reduce){.bd{transition:none}.card.bd-pulse{animation:none}}
 .card-foot{margin-top:12px;padding-top:10px;border-top:1px solid var(--cream-dark);display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
 .card-source{font-size:.74rem;color:var(--text-mute);flex:1;min-width:0}
 .card-note{margin-top:8px;padding:8px 10px;background:var(--cream-soft);border-radius:8px;font-size:.78rem;color:var(--text-soft);font-style:italic}
@@ -915,80 +933,92 @@ function makeAdhkarCard(item, scope){
   s.textContent = src;
   foot.appendChild(s);
 
-  if(count > 1 && (scope==='morning' || scope==='evening' || scope==='sleep' || scope==='wake' || scope==='afterPrayer')){
-    var pill = document.createElement('button');
-    pill.className = 'counter-pill';
-    var bucket = bucketOf(scope);
-    var cur = bucket[item.id] || 0;
-    if(cur >= count) pill.classList.add('done');
-    pill.innerHTML = '<span class="counter-num">'+cur+'</span>/<span>'+count+'</span>';
-    // Extract tick logic so card and pill share the same function
+  if(count >= 1 && (scope==='morning' || scope==='evening' || scope==='sleep' || scope==='wake' || scope==='afterPrayer')){
+    var ar = STATE.lang==='ar';
+    var bw = document.createElement('div'); bw.className = 'bd-wrap';
+    var vis = buildBeads(count);
+    var lab = document.createElement('div'); lab.className = 'bd-label';
+    var rs = document.createElement('button'); rs.type = 'button'; rs.className = 'bd-reset';
+    rs.textContent = ar ? 'إعادة' : 'Reset'; rs.setAttribute('aria-label', ar ? 'إعادة العد' : 'Reset count');
+    var side = document.createElement('div'); side.style.cssText = 'display:flex;align-items:center;gap:10px';
+    side.appendChild(lab); side.appendChild(rs);
+    bw.appendChild(vis.el); bw.appendChild(side);
+    card.insertBefore(bw, null);
+    var paint = function(){
+      var cur = bucketOf(scope)[item.id] || 0;
+      vis.paint(Math.min(cur, count));
+      var full = cur >= count;
+      card.classList.toggle('card-done', full);
+      rs.hidden = cur === 0;
+      if(count === 1) lab.innerHTML = full ? '<b>'+(ar?'✓ تم':'✓ Done')+'</b>' : (ar?'اضغط عند القراءة':'Tap when read');
+      else lab.innerHTML = full ? '<b>'+(ar?'✓ تم · ':'✓ Done · ')+count+'</b>' : '<b>'+cur+'</b> '+(ar?'من ':'of ')+count;
+    };
     var tickFn = function(){
       var rolled = applyRollover();
-      bucket = bucketOf(scope);
-      var c = (bucket[item.id]||0);
+      var bucket = bucketOf(scope);
+      var c = bucket[item.id] || 0;
+      if(c >= count) return;            // finished: only the reset button starts it again
+      c++; bucket[item.id] = c;
       if(c >= count){
-        bucket[item.id] = 0;
-        pill.classList.remove('done');
-      } else {
-        c++;
-        bucket[item.id] = c;
-        if(c>=count){
-          pill.classList.add('done');
-          vibrate([30,40,60]);
-          markAdhkarDone(scope, item.id);
-        } else {
-          vibrate(20);
-        }
-      }
-      pill.innerHTML = '<span class="counter-num">'+(bucket[item.id]||0)+'</span>/<span>'+count+'</span>';
-      saveState();
-      updateHomeProgress();
+        vibrate(count === 1 ? 40 : [30,40,60]);
+        markAdhkarDone(scope, item.id);
+        card.classList.remove('bd-pulse'); void card.offsetWidth; card.classList.add('bd-pulse');
+        setTimeout(function(){ scrollToNextAdhkar(card); }, 450);
+      } else vibrate(15);
+      saveState(); updateHomeProgress(); paint();
       if(rolled) renderAdhkarList();
     };
-    pill.onclick = tickFn;
-    // Make entire card tappable — use click (not touchstart) so scroll gestures don't trigger count
+    rs.onclick = function(e){
+      e.stopPropagation();
+      var bucket = bucketOf(scope); bucket[item.id] = 0;
+      if(scope==='morning'){ var i1 = STATE.progress.morningDone.indexOf(item.id); if(i1>-1) STATE.progress.morningDone.splice(i1,1); }
+      if(scope==='evening'){ var i2 = STATE.progress.eveningDone.indexOf(item.id); if(i2>-1) STATE.progress.eveningDone.splice(i2,1); }
+      saveState(); updateHomeProgress(); paint();
+    };
+    // the whole card counts — click (not touchstart) so scrolling never counts
     card.style.cursor = 'pointer';
     card.addEventListener('click', function(e){
       var el = e.target; while(el && el.nodeType !== 1) el = el.parentElement;
-      if(!el || el.closest('.card-fav, .counter-pill')) return;
+      if(!el || el.closest('.card-fav, .bd-reset, button, a')) return;
       tickFn();
     });
-    foot.appendChild(pill);
-  } else if(count===1 && (scope==='morning' || scope==='evening' || scope==='sleep' || scope==='wake' || scope==='afterPrayer')){
-    var done = document.createElement('button');
-    done.className = 'counter-pill';
-    var bucket2 = bucketOf(scope);
-    var isDone = (bucket2[item.id]||0) >= 1;
-    if(isDone) done.classList.add('done');
-    done.textContent = isDone ? (STATE.lang==='ar'?'✓ تم':'✓ Done') : (STATE.lang==='ar'?'علّم':'Mark');
-    var doneFn = function(){
-      var rolled = applyRollover();
-      bucket2 = bucketOf(scope);
-      var c = bucket2[item.id]||0;
-      if(c>=1){ bucket2[item.id]=0; done.classList.remove('done'); done.textContent = STATE.lang==='ar'?'علّم':'Mark'; }
-      else {
-        bucket2[item.id]=1; done.classList.add('done');
-        done.textContent = STATE.lang==='ar'?'✓ تم':'✓ Done';
-        vibrate(40);
-        markAdhkarDone(scope, item.id);
-      }
-      saveState();
-      updateHomeProgress();
-      if(rolled) renderAdhkarList();
-    };
-    done.onclick = doneFn;
-    // Make entire card tappable for mark/done too
-    card.style.cursor = 'pointer';
-    card.addEventListener('click', function(e){
-      var el = e.target; while(el && el.nodeType !== 1) el = el.parentElement;
-      if(!el || el.closest('.card-fav, .counter-pill')) return;
-      doneFn();
-    });
-    foot.appendChild(done);
+    paint();
   }
   card.appendChild(foot);
   return card;
+}
+function buildBeads(count){
+  if(count <= 10){
+    var row = document.createElement('div'); row.className = 'bd-row'; row.setAttribute('aria-hidden','true');
+    var beads = [];
+    for(var k=0; k<count; k++){ var b = document.createElement('span'); b.className = 'bd' + (count===1?' bd-one':''); row.appendChild(b); beads.push(b); }
+    return { el: row, paint: function(cur){ beads.forEach(function(b, k){ b.className = 'bd' + (count===1?' bd-one':'') + (k < cur ? ' on' : '') + (k === cur && cur < count && count > 1 ? ' cur' : ''); }); } };
+  }
+  // larger counts: a small masbaha ring, in rounds like the tasbih page
+  var per = msbGeom(count).per;
+  var box = document.createElement('div'); box.className = 'bd-mini'; box.setAttribute('aria-hidden','true');
+  var cx = 50, cy = 50, R = 42, a0 = Math.PI/2 + 0.35, a1 = Math.PI/2 + 2*Math.PI - 0.35, br = per > 24 ? 3.6 : 4.6;
+  var svg = '<svg viewBox="0 0 100 100">';
+  for(var k=0; k<per; k++){
+    var t = per === 1 ? 0.5 : k/(per-1), ang = a0 + t*(a1 - a0);
+    svg += '<circle class="msb-bead" cx="'+(cx + R*Math.cos(ang)).toFixed(1)+'" cy="'+(cy + R*Math.sin(ang)).toFixed(1)+'" r="'+br+'"></circle>';
+  }
+  svg += '<circle class="msb-tassel" cx="50" cy="96" r="3.4"></circle></svg>';
+  box.innerHTML = svg + '<div class="bd-mini-n"></div>';
+  var circles = box.querySelectorAll('circle.msb-bead'), num = box.querySelector('.bd-mini-n');
+  return { el: box, paint: function(cur){
+    var full = cur >= count, inRound = full ? per : cur % per;
+    if(!full && cur > 0 && inRound === 0) inRound = per;
+    for(var k=0; k<circles.length; k++) circles[k].setAttribute('class', 'msb-bead' + (k < inRound ? ' on' : '') + (!full && inRound < per && k === inRound ? ' cur' : ''));
+    num.textContent = cur;
+  } };
+}
+function scrollToNextAdhkar(card){
+  var n = card.nextElementSibling;
+  while(n && n.classList && n.classList.contains('card-done')) n = n.nextElementSibling;
+  if(!n || !n.scrollIntoView) return;
+  var reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  n.scrollIntoView({ behavior: reduce ? 'auto' : 'smooth', block: 'center' });
 }
 function markAdhkarDone(scope, id){
   if(scope==='morning'){
