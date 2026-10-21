@@ -107,6 +107,9 @@ body::before{content:'';position:fixed;inset:0;opacity:0.025;background-image:re
 .card-ar{font-family:'Amiri','Scheherazade New',serif;font-size:var(--ar-size);line-height:2.1;text-align:right;direction:rtl;color:var(--text);padding:8px 4px;white-space:pre-wrap}
 .card-translit{font-size:.84rem;color:var(--text-mute);margin-top:8px;font-style:italic;line-height:1.55}
 .card-en{font-family:'Cormorant Garamond',serif;font-size:.98rem;line-height:1.6;color:var(--text-soft);margin-top:10px;padding-top:10px;border-top:1px dashed var(--cream-dark)}
+.restart-bar{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 14px;margin-bottom:12px;border-radius:14px;background:var(--cream-dark);color:var(--text-soft);font-size:.86rem}
+.restart-bar button{min-height:40px;padding:0 14px;border-radius:10px;border:1px solid var(--gold);background:var(--white);color:var(--green-deep);font-family:inherit;font-size:.85rem;cursor:pointer}
+[data-theme="dark"] .restart-bar button{background:var(--cream-soft)}
 .bd-wrap{margin-top:14px;display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap}
 .bd-row{display:flex;align-items:center;gap:0;flex-wrap:wrap;row-gap:8px;position:relative;padding:4px 0}
 .bd{width:20px;height:20px;border-radius:50%;background:var(--cream-dark);border:1.5px solid var(--gold);border-color:rgba(201,168,76,.45);box-sizing:border-box;transition:background .18s ease,transform .18s ease}
@@ -642,7 +645,8 @@ function applyRollover(){
 applyRollover();
 // the app is usually left open as a PWA, so re-check whenever it comes back
 function rolloverOnResume(){
-  if(!applyRollover()) return;
+  var fr = STATE.activeAdhkarTab && freshenScope(STATE.activeAdhkarTab);
+  if(!applyRollover() && !fr) return;
   var active = document.querySelector('.page.active');
   var name = active ? active.id.replace('page-','') : '';
   if(name==='adhkar') renderAdhkarList();
@@ -843,10 +847,53 @@ function renderAdhkarList(){
     renderSituational(list);
     return;
   }
+  freshenScope(key);
   var items = DATA[key] || [];
+  var bar = document.createElement('div'); bar.className = 'restart-bar'; bar.id = 'restart-bar';
+  bar.innerHTML = '<span id="restart-n"></span>';
+  var rb = document.createElement('button'); rb.type = 'button'; rb.id = 'restart-btn';
+  rb.textContent = STATE.lang==='ar' ? 'ابدأ من جديد' : 'Start again';
+  rb.onclick = function(){ restartScope(key); };
+  bar.appendChild(rb); list.appendChild(bar);
   items.forEach(function(item){
     list.appendChild(makeAdhkarCard(item, key));
   });
+  updateRestartBar(key);
+}
+function updateRestartBar(key){
+  var nEl = document.getElementById('restart-n'), btn = document.getElementById('restart-btn');
+  if(!nEl || !btn) return;
+  var items = DATA[key] || [], b = bucketOf(key), ar = STATE.lang==='ar';
+  var doneN = items.filter(function(it){ return (b[it.id]||0) >= (it.count||1); }).length;
+  var any = items.some(function(it){ return (b[it.id]||0) > 0; });
+  nEl.textContent = ar ? 'أتممت '+doneN+' من '+items.length : doneN+' of '+items.length+' done';
+  btn.hidden = !any;
+}
+/* Sections read more than once a day start fresh by themselves:
+   after-prayer adhkar after each prayer (no tap for 40 minutes),
+   sleep and waking adhkar after 6 hours. Morning and evening reset daily. */
+var FRESH_AFTER = { afterPrayer: 40*60000, sleep: 6*3600000, wake: 6*3600000 };
+function touchScope(scope){
+  if(!STATE.touched || typeof STATE.touched !== 'object') STATE.touched = {};
+  STATE.touched[scope] = Date.now();
+}
+function freshenScope(scope){
+  var gap = FRESH_AFTER[scope];
+  if(!gap || !STATE.touched) return false;
+  var last = STATE.touched[scope];
+  if(!last || Date.now() - last < gap) return false;
+  var b = bucketOf(scope); Object.keys(b).forEach(function(id){ delete b[id]; });
+  delete STATE.touched[scope];
+  saveState();
+  return true;
+}
+function restartScope(scope){
+  var b = bucketOf(scope); Object.keys(b).forEach(function(id){ delete b[id]; });
+  if(scope==='morning') STATE.progress.morningDone = [];
+  if(scope==='evening') STATE.progress.eveningDone = [];
+  if(STATE.touched) delete STATE.touched[scope];
+  saveState(); updateHomeProgress(); renderAdhkarList();
+  window.scrollTo({ top: 0 });
 }
 function renderSituational(container){
   var groups = {};
@@ -955,6 +1002,8 @@ function makeAdhkarCard(item, scope){
     };
     var tickFn = function(){
       var rolled = applyRollover();
+      if(freshenScope(scope)){ renderAdhkarList(); return; }
+      touchScope(scope);
       var bucket = bucketOf(scope);
       var c = bucket[item.id] || 0;
       if(c >= count) return;            // finished: only the reset button starts it again
@@ -965,7 +1014,7 @@ function makeAdhkarCard(item, scope){
         card.classList.remove('bd-pulse'); void card.offsetWidth; card.classList.add('bd-pulse');
         setTimeout(function(){ scrollToNextAdhkar(card); }, 450);
       } else vibrate(15);
-      saveState(); updateHomeProgress(); paint();
+      saveState(); updateHomeProgress(); paint(); updateRestartBar(scope);
       if(rolled) renderAdhkarList();
     };
     rs.onclick = function(e){
@@ -973,7 +1022,7 @@ function makeAdhkarCard(item, scope){
       var bucket = bucketOf(scope); bucket[item.id] = 0;
       if(scope==='morning'){ var i1 = STATE.progress.morningDone.indexOf(item.id); if(i1>-1) STATE.progress.morningDone.splice(i1,1); }
       if(scope==='evening'){ var i2 = STATE.progress.eveningDone.indexOf(item.id); if(i2>-1) STATE.progress.eveningDone.splice(i2,1); }
-      saveState(); updateHomeProgress(); paint();
+      saveState(); updateHomeProgress(); paint(); updateRestartBar(scope);
     };
     // the whole card counts — click (not touchstart) so scrolling never counts
     card.style.cursor = 'pointer';
